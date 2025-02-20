@@ -4,10 +4,11 @@
     <title>Détection en temps réel</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        #webcam-container {
+        #video {
             width: 100%;
             max-width: 500px;
             margin: 0 auto;
+            display: block;
         }
         button {
             padding: 10px;
@@ -29,7 +30,8 @@
 <body>
     <button id="startCamera">Ouvrir l'appareil photo</button>
     <button id="stopCamera" style="display:none;">Fermer l'appareil photo</button>
-    <div id="webcam-container"></div>
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" style="display:none;"></canvas>
     <div id="label-container"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
@@ -37,8 +39,14 @@
 
     <script type="text/javascript">
         const URL = "https://teachablemachine.withgoogle.com/models/OcZJIo9wh/";
-        let model, webcam, labelContainer, maxPredictions;
+        let model, labelContainer, maxPredictions;
         let isRunning = false;
+        
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        let stream = null;
 
         async function initModel() {
             const modelURL = URL + "model.json";
@@ -47,49 +55,52 @@
             maxPredictions = model.getTotalClasses();
         }
 
-        async function init() {
-            if (!model) {
-                await initModel();
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment'
+                    }
+                });
+                video.srcObject = stream;
+                isRunning = true;
+
+                // Afficher le bouton d'arrêt et cacher le bouton de démarrage
+                document.getElementById('startCamera').style.display = 'none';
+                document.getElementById('stopCamera').style.display = 'block';
+
+                // Préparer le conteneur des labels
+                labelContainer = document.getElementById("label-container");
+                labelContainer.innerHTML = '';
+                for (let i = 0; i < maxPredictions; i++) {
+                    const predictionDiv = document.createElement("div");
+                    predictionDiv.className = "prediction-bar";
+                    labelContainer.appendChild(predictionDiv);
+                }
+
+                // Commencer les prédictions
+                video.addEventListener('loadeddata', function() {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    window.requestAnimationFrame(loop);
+                });
+
+            } catch (err) {
+                console.error("Erreur lors de l'accès à la caméra:", err);
+                alert("Impossible d'accéder à la caméra. Veuillez vérifier les permissions.");
             }
-
-            // Configuration de la webcam
-            const flip = true;
-            webcam = new tmImage.Webcam(400, 400, flip);
-            await webcam.setup();
-            await webcam.play();
-            isRunning = true;
-
-            // Afficher le bouton d'arrêt et cacher le bouton de démarrage
-            document.getElementById('startCamera').style.display = 'none';
-            document.getElementById('stopCamera').style.display = 'block';
-
-            // Ajouter la webcam au DOM
-            const webcamContainer = document.getElementById('webcam-container');
-            webcamContainer.innerHTML = ''; // Nettoyer le conteneur
-            webcamContainer.appendChild(webcam.canvas);
-
-            // Préparer le conteneur des labels
-            labelContainer = document.getElementById("label-container");
-            labelContainer.innerHTML = ''; // Nettoyer le conteneur
-            for (let i = 0; i < maxPredictions; i++) {
-                const predictionDiv = document.createElement("div");
-                predictionDiv.className = "prediction-bar";
-                labelContainer.appendChild(predictionDiv);
-            }
-
-            window.requestAnimationFrame(loop);
         }
 
         async function loop() {
             if (isRunning) {
-                webcam.update();
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                 await predict();
                 window.requestAnimationFrame(loop);
             }
         }
 
         async function predict() {
-            const prediction = await model.predict(webcam.canvas);
+            const prediction = await model.predict(canvas);
             for (let i = 0; i < maxPredictions; i++) {
                 const classPrediction =
                     prediction[i].className + ": " + (prediction[i].probability * 100).toFixed(2) + "%";
@@ -97,29 +108,25 @@
             }
         }
 
-        async function stopCamera() {
-            if (webcam) {
-                webcam.stop();
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
                 isRunning = false;
-                
-                // Nettoyer le conteneur de la webcam
-                document.getElementById('webcam-container').innerHTML = '';
-                
-                // Nettoyer le conteneur des labels
-                document.getElementById('label-container').innerHTML = '';
-                
-                // Réafficher le bouton de démarrage et cacher le bouton d'arrêt
+                labelContainer.innerHTML = '';
                 document.getElementById('startCamera').style.display = 'block';
                 document.getElementById('stopCamera').style.display = 'none';
             }
         }
 
         // Gestionnaires d'événements pour les boutons
-        document.getElementById('startCamera').addEventListener('click', init);
+        document.getElementById('startCamera').addEventListener('click', async () => {
+            if (!model) {
+                await initModel();
+            }
+            startCamera();
+        });
         document.getElementById('stopCamera').addEventListener('click', stopCamera);
-
-        // Initialiser le modèle au chargement de la page
-        initModel();
     </script>
 </body>
 </html>
