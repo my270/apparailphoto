@@ -1,4 +1,4 @@
-<<!DOCTYPE html>
+<!DOCTYPE html>
 <html>
 <head>
     <title>Détection en temps réel</title>
@@ -17,6 +17,12 @@
             margin-top: 20px;
             font-size: 20px;
         }
+        .prediction-bar {
+            margin: 5px 0;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+        }
     </style>
 </head>
 <body>
@@ -24,63 +30,62 @@
     <video id="video" autoplay playsinline></video>
     <div id="label-container"></div>
 
-    <!-- Import TensorFlow.js et Teachable Machine -->
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
 
-    <script>
+    <script type="text/javascript">
         const URL = "https://teachablemachine.withgoogle.com/models/OcZJIo9wh/";
-        let model, labelContainer, maxPredictions;
+        let model, webcam, labelContainer, maxPredictions;
 
         async function init() {
             const modelURL = URL + "model.json";
             const metadataURL = URL + "metadata.json";
 
+            // Charger le modèle et les métadonnées
             model = await tmImage.load(modelURL, metadataURL);
             maxPredictions = model.getTotalClasses();
 
+            // Configuration de la webcam
+            const flip = true; // que la caméra frontale soit en miroir
+            const width = 400;
+            const height = 400;
+
+            webcam = new tmImage.Webcam(width, height, flip); // width, height, flip
+            await webcam.setup(); // demande l'accès à la webcam
+            await webcam.play();
+            window.requestAnimationFrame(loop);
+
+            // Ajouter les éléments de la webcam au DOM
+            document.getElementById("video").appendChild(webcam.canvas);
+
+            // Configuration du conteneur pour les prédictions
             labelContainer = document.getElementById("label-container");
             for (let i = 0; i < maxPredictions; i++) {
-                labelContainer.appendChild(document.createElement("div"));
+                const predictionDiv = document.createElement("div");
+                predictionDiv.className = "prediction-bar";
+                labelContainer.appendChild(predictionDiv);
             }
         }
-
-        const startCameraButton = document.getElementById('startCamera');
-        const videoElement = document.getElementById('video');
-
-        startCameraButton.addEventListener('click', async () => {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: 'environment' // Pour utiliser la caméra arrière
-                    }
-                });
-                videoElement.srcObject = stream;
-                
-                // Initialiser le modèle après avoir démarré la caméra
-                await init();
-                // Démarrer la prédiction en continu
-                window.requestAnimationFrame(loop);
-
-            } catch (err) {
-                console.error("Erreur lors de l'accès à la caméra:", err);
-                alert("Impossible d'accéder à la caméra. Veuillez vérifier les permissions.");
-            }
-        });
 
         async function loop() {
-            if (model && videoElement.srcObject) {
-                const prediction = await model.predict(videoElement);
-                
-                for (let i = 0; i < maxPredictions; i++) {
-                    const classPrediction =
-                        prediction[i].className + ": " + prediction[i].probability.toFixed(2);
-                    labelContainer.childNodes[i].innerHTML = classPrediction;
-                }
-                
-                window.requestAnimationFrame(loop);
+            webcam.update(); // mise à jour du flux de la webcam
+            await predict();
+            window.requestAnimationFrame(loop);
+        }
+
+        async function predict() {
+            const prediction = await model.predict(webcam.canvas);
+            for (let i = 0; i < maxPredictions; i++) {
+                const classPrediction =
+                    prediction[i].className + ": " + (prediction[i].probability * 100).toFixed(2) + "%";
+                labelContainer.childNodes[i].innerHTML = classPrediction;
             }
         }
+
+        // Gestionnaire d'événement pour le bouton
+        document.getElementById('startCamera').addEventListener('click', function() {
+            init();
+        });
     </script>
 </body>
 </html>
